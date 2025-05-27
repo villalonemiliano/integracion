@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: api2
+Version: 0.1
+Requires-Dist: fastapi
+Requires-Dist: uvicorn
+Requires-Dist: pydantic
+Requires-Dist: pydantic-settings
+Requires-Dist: aiosqlite
+Dynamic: requires-dist

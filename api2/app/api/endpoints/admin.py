@@ -25,6 +25,82 @@ async def create_plan(
         await db.commit()
         return {"message": "Plan created successfully"}
 
+@router.post("/plans/create")
+async def create_plan(
+    name: str,
+    requests_per_second: int,
+    requests_per_month: int,
+    duration_days: int,
+    price: float,
+    admin_auth: dict = Depends(verify_admin_route)
+):
+    """Crear un nuevo plan"""
+    async with get_db() as db:
+        await db.execute("""
+            INSERT INTO plans (
+                name,
+                requests_per_second,
+                requests_per_month,
+                duration_days,
+                price
+            ) VALUES (?, ?, ?, ?, ?)
+        """, (name, requests_per_second, requests_per_month, duration_days, price))
+        await db.commit()
+        return {"message": "Plan creado exitosamente"}
+
+@router.post("/generate-api-key")
+async def generate_api_key(
+    email: str,
+    plan_id: int,
+    admin_auth: dict = Depends(verify_admin_route)
+):
+    """Generar una nueva API key para un usuario"""
+    async with get_db() as db:
+        # Obtener información del plan
+        cursor = await db.execute(
+            "SELECT * FROM plans WHERE id = ?",
+            (plan_id,)
+        )
+        plan = await cursor.fetchone()
+        
+        if not plan:
+            raise HTTPException(
+                status_code=404,
+                detail="Plan no encontrado"
+            )
+        
+        # Generar API key
+        api_key = secrets.token_urlsafe(32)
+        expires_at = datetime.utcnow() + timedelta(days=plan["duration_days"])
+        
+        # Guardar API key
+        await db.execute("""
+            INSERT INTO api_keys (
+                key,
+                user_email,
+                plan_id,
+                requests_per_second,
+                requests_per_month,
+                expires_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            api_key,
+            email,
+            plan_id,
+            plan["requests_per_second"],
+            plan["requests_per_month"],
+            expires_at
+        ))
+        
+        await db.commit()
+        
+        return {
+            "api_key": api_key,
+            "email": email,
+            "plan": plan["name"],
+            "expires_at": expires_at
+        }
+
 @router.get("/plans")
 async def list_plans(admin_auth: bool = Depends(verify_admin)):
     """List all plans"""
@@ -195,4 +271,53 @@ async def list_api_keys(admin_auth: bool = Depends(verify_admin)):
             ORDER BY created_at DESC
         """)
         keys = await cursor.fetchall()
-        return [dict(key) for key in keys] 
+        return [dict(key) for key in keys]
+
+@router.get("/clients/usage")
+async def get_clients_usage(admin_auth: dict = Depends(verify_admin_route)):
+    """Obtener información detallada de uso de todos los clientes"""
+    async with get_db() as db:
+        # Obtener información de clientes y su uso
+        cursor = await db.execute("""
+            SELECT 
+                ak.key,
+                ak.user_email,
+                ak.requests_this_month,
+                ak.requests_per_month,
+                ak.created_at,
+                ak.last_used_at,
+                ak.expires_at,
+                p.name as plan_name,
+                COUNT(au.id) as total_requests,
+                MAX(au.timestamp) as last_request
+            FROM api_keys ak
+            LEFT JOIN plans p ON ak.plan_id = p.id
+            LEFT JOIN api_usage au ON ak.key = au.api_key
+            GROUP BY ak.key
+            ORDER BY ak.created_at DESC
+        """)
+        
+        clients = await cursor.fetchall()
+        
+        # Formatear respuesta
+        return {
+            "clients": [
+                {
+                    "api_key": client["key"],
+                    "email": client["user_email"],
+                    "plan": client["plan_name"],
+                    "usage": {
+                        "requests_this_month": client["requests_this_month"],
+                        "requests_per_month": client["requests_per_month"],
+                        "total_requests": client["total_requests"]
+                    },
+                    "dates": {
+                        "created_at": client["created_at"],
+                        "last_used": client["last_used_at"],
+                        "expires_at": client["expires_at"],
+                        "last_request": client["last_request"]
+                    }
+                }
+                for client in clients
+            ]
+        } 

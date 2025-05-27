@@ -22,10 +22,18 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str = str(Path(__file__).parent.parent.parent.parent / "api 1" / "stock_analysis.db")
+    STOCK_ANALYSIS_DB: str = str(Path(__file__).parent.parent.parent.parent / "api 1" / "stock_analysis.db")
     
     # Rate Limiting
     DEFAULT_REQUESTS_PER_SECOND: int = 10
     DEFAULT_REQUESTS_PER_MONTH: int = 10000
+    
+    # Plan Configuration
+    DEFAULT_PLAN_DURATION: int = 30  # días
+    MIN_REQUESTS_PER_SECOND: int = 1
+    MAX_REQUESTS_PER_SECOND: int = 100
+    MIN_REQUESTS_PER_MONTH: int = 1000
+    MAX_REQUESTS_PER_MONTH: int = 1000000
     
     class Config:
         case_sensitive = True
